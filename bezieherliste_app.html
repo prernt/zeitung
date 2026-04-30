@@ -34,7 +34,14 @@ h1{font-size:20px;font-weight:700;color:#1a237e;margin-bottom:3px;letter-spacing
 .oi-handle{color:#c5cae9;font-size:17px;cursor:grab;flex-shrink:0}
 .oi-num{width:20px;height:20px;border-radius:50%;background:#3f51b5;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .oi-name{flex:1;font-weight:500;color:#333}
-.oe-badge{font-size:9px;background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:2px 5px;font-weight:700;flex-shrink:0}
+.oe-toggle{display:flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0}
+.oe-toggle input{display:none}
+.oe-slider{width:28px;height:16px;background:#ddd;border-radius:8px;position:relative;transition:.2s;flex-shrink:0}
+.oe-slider::after{content:'';position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;top:2px;left:2px;transition:.2s}
+.oe-toggle input:checked~.oe-slider{background:#2e7d32}
+.oe-toggle input:checked~.oe-slider::after{transform:translateX(12px)}
+.oe-label{font-size:9px;font-weight:600;color:#999;white-space:nowrap}
+.oe-toggle input:checked~.oe-label{color:#2e7d32}
 .btn-main{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#3f51b5 0%,#5c6bc0 100%);color:#fff;box-shadow:0 3px 12px rgba(63,81,181,.35);transition:.2s;letter-spacing:.2px}
 .btn-main:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 5px 18px rgba(63,81,181,.42)}
 .btn-main:disabled{background:#ccc;box-shadow:none;transform:none;cursor:not-allowed}
@@ -95,24 +102,76 @@ h1{font-size:20px;font-weight:700;color:#1a237e;margin-bottom:3px;letter-spacing
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-const ODD_EVEN_KEYS=['cottbuser','naumburger','wismarer','rostocker'];
+// ── State (persisted to localStorage) ────────────────────────────────────────
 let files=[];
-let streetOrder=['Rostocker Str.','Am Flugfeld','Naumburger Str.','Stralsunder Str.','Wismarer Str.','Cottbuser Str.','Wittenberger Str.'];
+let streetOrder=[];   // ordered list of street name strings
+let oddEvenSet=new Set(); // streets that get ODD/EVEN split
 let dragIdx=null;
 
+function savePrefs(){
+  try{
+    localStorage.setItem('bl_streetOrder',JSON.stringify(streetOrder));
+    localStorage.setItem('bl_oddEven',JSON.stringify([...oddEvenSet]));
+  }catch(e){}
+}
+function loadPrefs(){
+  try{
+    const so=localStorage.getItem('bl_streetOrder');
+    const oe=localStorage.getItem('bl_oddEven');
+    if(so) streetOrder=JSON.parse(so);
+    if(oe) oddEvenSet=new Set(JSON.parse(oe));
+  }catch(e){}
+}
+loadPrefs();
+
 function normStr(s){return(s||'').toLowerCase().replace(/\s*str\.\s*$/,'').replace(/\s*strasse\s*$/,'').replace(/\s*straße\s*$/,'').trim();}
-function isOE(s){const n=normStr(s);return ODD_EVEN_KEYS.some(k=>n.includes(k));}
+function isOE(s){return oddEvenSet.has(s);}
+function toggleOE(s){
+  if(oddEvenSet.has(s)) oddEvenSet.delete(s); else oddEvenSet.add(s);
+  savePrefs(); renderOrder();
+}
 
 const dz=document.getElementById('dz');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');addFiles(e.dataTransfer.files);});
 
-function addFiles(fl){
-  for(const f of fl){if(f.type==='application/pdf'&&!files.find(x=>x.name===f.name))files.push(f);}
-  renderFiles();updateBtn();
+function extractStreetOrder(allRows){
+  const seen=new Set(),order=[];
+  for(const r of allRows){const s=r.strasse;if(s&&!seen.has(s)){seen.add(s);order.push(s);}}
+  return order;
 }
-function removeFile(i){files.splice(i,1);renderFiles();updateBtn();}
+
+async function addFiles(fl){
+  for(const f of fl){if(f.type==='application/pdf'&&!files.find(x=>x.name===f.name))files.push(f);}
+  renderFiles();
+  if(files.length>0){
+    setOrderLoading(true);
+    try{
+      let allRows=[];
+      for(const f of files){const raw=await parsePDF(f);allRows=allRows.concat(cleanRows(raw));}
+      const discovered=extractStreetOrder(allRows);
+      const kept=streetOrder.filter(s=>discovered.includes(s));
+      const added=discovered.filter(s=>!streetOrder.includes(s));
+      streetOrder=[...kept,...added];
+      // Remove oddEven entries for streets no longer present
+      for(const s of [...oddEvenSet]) if(!discovered.includes(s)) oddEvenSet.delete(s);
+      savePrefs();
+    }catch(e){console.error('Street scan error:',e);}
+    setOrderLoading(false);
+  } else {
+    streetOrder=[];
+    savePrefs();
+  }
+  renderOrder(); updateBtn();
+}
+
+function removeFile(i){files.splice(i,1);addFiles([]);}
+
+function setOrderLoading(on){
+  if(on) document.getElementById('olist').innerHTML='<div style="font-size:12px;color:#aaa;padding:10px 0;text-align:center">Lese PDFs...</div>';
+}
+
 function renderFiles(){
   document.getElementById('flist').innerHTML=files.map((f,i)=>`
     <div class="fi">
@@ -121,23 +180,34 @@ function renderFiles(){
       <span class="fi-rm" onclick="removeFile(${i})">✕</span>
     </div>`).join('');
 }
-function updateBtn(){document.getElementById('goBtn').disabled=files.length===0;}
+function updateBtn(){document.getElementById('goBtn').disabled=files.length===0||streetOrder.length===0;}
 
 function renderOrder(){
-  document.getElementById('olist').innerHTML=streetOrder.map((s,i)=>`
-    <div class="oi" draggable="true" data-i="${i}"
+  if(!streetOrder.length){
+    document.getElementById('olist').innerHTML='<div style="font-size:12px;color:#bbb;padding:8px 0">Straßen erscheinen nach dem Hochladen der PDFs</div>';
+    return;
+  }
+  document.getElementById('olist').innerHTML=streetOrder.map((s,i)=>{
+    const oe=isOE(s);
+    return `<div class="oi" draggable="true" data-i="${i}"
       ondragstart="dragStart(${i})" ondragover="dragOver(event,${i})"
       ondrop="dragDrop(${i})" ondragend="dragEnd()">
       <span class="oi-handle">⠿</span>
       <span class="oi-num">${i+1}</span>
       <span class="oi-name">${s}</span>
-    </div>`).join('');
+      <label class="oe-toggle" title="ODD/EVEN aufteilen" onclick="event.stopPropagation()">
+        <input type="checkbox" ${oe?'checked':''} onchange="toggleOE('${s.replace(/'/g,"\\'")}')">
+        <span class="oe-slider"></span>
+        <span class="oe-label">ODD/EVEN</span>
+      </label>
+    </div>`;
+  }).join('');
 }
 renderOrder();
 
 function dragStart(i){dragIdx=i;document.querySelector('[data-i="'+i+'"]').classList.add('dragging');}
 function dragOver(e,i){e.preventDefault();document.querySelectorAll('.oi').forEach(el=>el.classList.remove('over'));if(i!==dragIdx)document.querySelector('[data-i="'+i+'"]').classList.add('over');}
-function dragDrop(i){if(i===dragIdx)return;const m=streetOrder.splice(dragIdx,1)[0];streetOrder.splice(i,0,m);renderOrder();}
+function dragDrop(i){if(i===dragIdx)return;const m=streetOrder.splice(dragIdx,1)[0];streetOrder.splice(i,0,m);savePrefs();renderOrder();}
 function dragEnd(){document.querySelectorAll('.oi').forEach(el=>el.classList.remove('dragging','over'));dragIdx=null;}
 
 // ── PDF Parsing ───────────────────────────────────────────────────────────────
@@ -274,9 +344,10 @@ function buildOutput(allRows,order){
       const odd=rows.filter(r=>{try{return parseInt(r.nr)%2===1;}catch{return false;}});
       const even=rows.filter(r=>{try{const n=parseInt(r.nr);return isNaN(n)||n%2===0;}catch{return true;}});
       for(const[lbl,seg]of[['ODD',odd],['EVEN',even]]){
+        out.push({type:'seg',label:lbl});
         for(const r of seg)out.push({type:'data',row:r,street:key});
         const{total,dc}=computeTotals(seg);
-        out.push({type:'total',label:'',total,dc});
+        out.push({type:'total',label:lbl,total,dc});
       }
     } else {
       for(const r of rows)out.push({type:'data',row:r,street:key});
@@ -325,8 +396,9 @@ function generatePDF(outputRows){
   doc.text(countStr,M+UW-3,14+6.5,{align:'right'});
 
   let yPos=28,tBody=[];
+  let midTable=false; // true after first flush of a street with ODD/EVEN
 
-  // Draw a full-width total/segment-total row manually (no column splits = no wrapping)
+  // Draw a full-width row directly on the page (never wraps, no column grid)
   function drawFullWidthRow(text,fillRGB,textRGB){
     const ROW_H=6.5;
     if(yPos+ROW_H>PH-10){doc.addPage();yPos=12;}
@@ -338,12 +410,13 @@ function generatePDF(outputRows){
     yPos+=ROW_H+1;
   }
 
-  function flush(){
+  // Flush tBody into an autoTable. showHead controls whether the column header is printed.
+  function flush(showHead=true){
     if(!tBody.length)return;
     doc.autoTable({
       startY:yPos,
       margin:{left:M,right:M},
-      head:[HEADS],
+      head: showHead ? [HEADS] : [],
       body:tBody.map(r=>r.cells),
       columnStyles:Object.fromEntries(WW.map((w,i)=>[i,{cellWidth:w}])),
       headStyles:{fillColor:[44,62,122],textColor:255,fontSize:7,fontStyle:'bold',cellPadding:{top:2,bottom:2,left:3,right:2}},
@@ -358,7 +431,6 @@ function generatePDF(outputRows){
       willDrawCell(data){
         if(data.section!=='body')return;
         const m=tBody[data.row.index];
-        // Strikethrough on Nr(0), Name(1) for ANZ=0 rows
         if(m&&m.isZero&&data.column.index<=1){
           const x=data.cell.x+data.cell.padding('left');
           const y=data.cell.y+data.cell.height/2+0.5;
@@ -374,9 +446,8 @@ function generatePDF(outputRows){
 
   for(const item of outputRows){
     if(item.type==='street'){
-      flush();
+      flush(); midTable=false;
       if(yPos>PH-30){doc.addPage();yPos=12;}
-      // Street bar: warm forest green — distinct from navy column headers
       doc.setFillColor(30,110,60);
       doc.rect(M,yPos-0.5,UW,8,'F');
       doc.setFont('helvetica','bold');doc.setFontSize(9);
@@ -385,18 +456,25 @@ function generatePDF(outputRows){
       yPos+=10;
     } else if(item.type==='data'){
       const r=item.row,z=r.anz==='0';
-      // 8 cells: Nr, Name, Anz, Drerz, Besonderheit, Pva, La, Abo  (no Strasse)
       tBody.push({type:'data',isZero:z,cells:[
         r.nr||'',r.name||'',r.anz||'',r.drerz||'',r.besond||'',r.pva||'',r.la||'',r.abo||''
       ]});
     } else if(item.type==='total'){
-      // Flush data rows first, then draw total as single full-width row
-      flush();
-      drawFullWidthRow(totalStr(item.label,item.total,item.dc),[218,232,248],[0,40,100]);
-      yPos+=1;
+      if(item.label){
+        // ODD/EVEN sub-total: flush current segment (no header on 2nd+ segments), draw full-width total
+        flush(!midTable); // show header only for first segment
+        midTable=true;
+        drawFullWidthRow(totalStr(item.label,item.total,item.dc),[218,232,248],[0,40,100]);
+      } else {
+        // Street-level total: flush then full-width row
+        flush(!midTable);
+        midTable=false;
+        drawFullWidthRow(totalStr(item.label,item.total,item.dc),[218,232,248],[0,40,100]);
+        yPos+=1;
+      }
     }
   }
-  flush();
+  flush(!midTable);
 
   const np=doc.internal.getNumberOfPages();
   for(let i=1;i<=np;i++){
@@ -424,13 +502,13 @@ async function processAndDownload(){
   err.style.display='none';sw.style.display='none';
 
   try{
+    // Parse all PDFs fresh (fast enough, avoids stale-cache issues)
     let allRows=[];
     for(let i=0;i<files.length;i++){
       pt.textContent='Lese Datei '+(i+1)+' / '+files.length+': '+files[i].name;
       pb.style.width=((i/files.length)*55)+'%';
       const raw=await parsePDF(files[i]);
-      const cleaned=cleanRows(raw);
-      allRows=allRows.concat(cleaned);
+      allRows=allRows.concat(cleanRows(raw));
     }
 
     pt.textContent='Verarbeite Daten...';pb.style.width='65%';
