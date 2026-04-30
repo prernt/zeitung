@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Bezieherliste Prozessor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;background:#eef0f7;min-height:100vh;color:#1a1a2e}
+.app{max-width:720px;margin:0 auto;padding:20px 14px 48px}
+h1{font-size:20px;font-weight:700;color:#1a237e;margin-bottom:3px;letter-spacing:-.4px}
+.sub{font-size:12px;color:#888;margin-bottom:18px}
+.card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 1px 8px rgba(0,0,0,.08);margin-bottom:14px}
+.sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:#999;margin-bottom:10px}
+.drop-zone{border:2px dashed #c5cae9;border-radius:10px;padding:26px 16px;text-align:center;cursor:pointer;transition:.18s;background:#fafbff;position:relative}
+.drop-zone.drag-over{border-color:#3f51b5;background:#eef0ff}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{font-size:28px;margin-bottom:6px}
+.dz-t{font-size:14px;font-weight:600;color:#3f51b5}
+.dz-s{font-size:11px;color:#aaa;margin-top:3px}
+.flist{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+.fi{display:flex;align-items:center;gap:8px;background:#f3f5ff;border-radius:8px;padding:7px 11px;font-size:12px;border:1px solid #e3e6ff}
+.fi-icon{color:#5c6bc0;font-size:15px;flex-shrink:0}
+.fi-name{flex:1;font-weight:500;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fi-rm{cursor:pointer;color:#bbb;font-size:15px;padding:2px 4px;border-radius:4px;line-height:1;flex-shrink:0}
+.fi-rm:hover{color:#e53935;background:#ffebee}
+.olist{display:flex;flex-direction:column;gap:5px}
+.oi{display:flex;align-items:center;gap:9px;background:#f3f5ff;border-radius:8px;padding:9px 11px;font-size:12px;cursor:grab;border:1.5px solid transparent;transition:.15s;user-select:none}
+.oi.dragging{opacity:.45;border-color:#9fa8da}
+.oi.over{border-color:#3f51b5;background:#e8eaf6}
+.oi-handle{color:#c5cae9;font-size:17px;cursor:grab;flex-shrink:0}
+.oi-num{width:20px;height:20px;border-radius:50%;background:#3f51b5;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.oi-name{flex:1;font-weight:500;color:#333}
+.oe-badge{font-size:9px;background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:2px 5px;font-weight:700;flex-shrink:0}
+.btn-main{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#3f51b5 0%,#5c6bc0 100%);color:#fff;box-shadow:0 3px 12px rgba(63,81,181,.35);transition:.2s;letter-spacing:.2px}
+.btn-main:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 5px 18px rgba(63,81,181,.42)}
+.btn-main:disabled{background:#ccc;box-shadow:none;transform:none;cursor:not-allowed}
+.btn-main.loading{background:linear-gradient(135deg,#5c6bc0,#7986cb)}
+.prog{margin-top:12px;display:none}
+.prog-wrap{height:5px;background:#e8eaf6;border-radius:3px;overflow:hidden}
+.prog-bar{height:100%;background:linear-gradient(90deg,#3f51b5,#7986cb);border-radius:3px;transition:width .35s;width:0}
+.prog-txt{font-size:11px;color:#888;text-align:center;margin-top:6px}
+.err{background:#ffebee;border-radius:8px;padding:11px 13px;color:#b71c1c;font-size:12px;margin-top:10px;display:none;border-left:3px solid #ef9a9a}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:10px 0 6px}
+.sc{background:#f3f5ff;border-radius:8px;padding:8px 10px;text-align:center}
+.sn{font-size:20px;font-weight:700;color:#3f51b5}
+.sn.red{color:#c62828}
+.sl{font-size:10px;color:#999;margin-top:1px}
+.logbox{background:#1e2044;border-radius:8px;padding:9px 12px;font-size:10.5px;color:#90a4ae;font-family:monospace;max-height:100px;overflow-y:auto;margin-top:6px}
+.lok{color:#69f0ae}.lwn{color:#ffcc02}
+@media(max-width:480px){.app{padding:12px 10px}.card{padding:14px}.btn-main{font-size:14px;padding:13px}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Bezieherliste Prozessor</h1>
+  <p class="sub">PDFs hochladen, Reihenfolge anpassen, PDF herunterladen</p>
+
+  <div class="card">
+    <div class="sec">1. PDFs hochladen</div>
+    <div class="drop-zone" id="dz">
+      <input type="file" id="fi" multiple accept=".pdf" onchange="addFiles(this.files)">
+      <div class="dz-icon">📄</div>
+      <div class="dz-t">PDFs auswählen oder hierher ziehen</div>
+      <div class="dz-s">Mehrere Dateien gleichzeitig möglich</div>
+    </div>
+    <div class="flist" id="flist"></div>
+  </div>
+
+  <div class="card">
+    <div class="sec">2. Reihenfolge der Straßen</div>
+    <div style="font-size:11px;color:#bbb;margin-bottom:8px">Zum Ändern ziehen</div>
+    <div class="olist" id="olist"></div>
+  </div>
+
+  <div class="card">
+    <button class="btn-main" id="goBtn" disabled onclick="processAndDownload()">
+      ⚙️ PDF erstellen &amp; herunterladen
+    </button>
+    <div class="prog" id="progDiv">
+      <div class="prog-wrap"><div class="prog-bar" id="progBar"></div></div>
+      <div class="prog-txt" id="progTxt">Verarbeite...</div>
+    </div>
+    <div class="err" id="errDiv"></div>
+    <div id="statsWrap" style="display:none">
+      <div class="stats" id="statsDiv"></div>
+      <div class="logbox" id="logDiv"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const ODD_EVEN_KEYS=['cottbuser','naumburger','wismarer','rostocker'];
+let files=[];
+let streetOrder=['Rostocker Str.','Am Flugfeld','Naumburger Str.','Stralsunder Str.','Wismarer Str.','Cottbuser Str.','Wittenberger Str.'];
+let dragIdx=null;
+
+function normStr(s){return(s||'').toLowerCase().replace(/\s*str\.\s*$/,'').replace(/\s*strasse\s*$/,'').replace(/\s*straße\s*$/,'').trim();}
+function isOE(s){const n=normStr(s);return ODD_EVEN_KEYS.some(k=>n.includes(k));}
+
+const dz=document.getElementById('dz');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');addFiles(e.dataTransfer.files);});
+
+function addFiles(fl){
+  for(const f of fl){if(f.type==='application/pdf'&&!files.find(x=>x.name===f.name))files.push(f);}
+  renderFiles();updateBtn();
+}
+function removeFile(i){files.splice(i,1);renderFiles();updateBtn();}
+function renderFiles(){
+  document.getElementById('flist').innerHTML=files.map((f,i)=>`
+    <div class="fi">
+      <span class="fi-icon">📄</span>
+      <span class="fi-name" title="${f.name}">${f.name}</span>
+      <span class="fi-rm" onclick="removeFile(${i})">✕</span>
+    </div>`).join('');
+}
+function updateBtn(){document.getElementById('goBtn').disabled=files.length===0;}
+
+function renderOrder(){
+  document.getElementById('olist').innerHTML=streetOrder.map((s,i)=>`
+    <div class="oi" draggable="true" data-i="${i}"
+      ondragstart="dragStart(${i})" ondragover="dragOver(event,${i})"
+      ondrop="dragDrop(${i})" ondragend="dragEnd()">
+      <span class="oi-handle">⠿</span>
+      <span class="oi-num">${i+1}</span>
+      <span class="oi-name">${s}</span>
+    </div>`).join('');
+}
+renderOrder();
+
+function dragStart(i){dragIdx=i;document.querySelector('[data-i="'+i+'"]').classList.add('dragging');}
+function dragOver(e,i){e.preventDefault();document.querySelectorAll('.oi').forEach(el=>el.classList.remove('over'));if(i!==dragIdx)document.querySelector('[data-i="'+i+'"]').classList.add('over');}
+function dragDrop(i){if(i===dragIdx)return;const m=streetOrder.splice(dragIdx,1)[0];streetOrder.splice(i,0,m);renderOrder();}
+function dragEnd(){document.querySelectorAll('.oi').forEach(el=>el.classList.remove('dragging','over'));dragIdx=null;}
+
+// ── PDF Parsing ───────────────────────────────────────────────────────────────
+// Coordinate notes:
+//   pdf.js y = viewport.height - transform[5]  (converts bottom-up PDF to top-down)
+//   pdfplumber top ≈ pdf.js y - 8pt  (pdfplumber uses glyph top, pdf.js uses baseline)
+//
+// Page layouts in the source PDFs:
+//   Page 1: big header block, column-header row at pdfplumber y≈184 → pdf.js y≈192
+//           first data row at pdfplumber y≈199 → pdf.js y≈207
+//   Page 2+: continuation table, column-header row at pdfplumber y≈63 → pdf.js y≈71
+//            first data row at pdfplumber y≈78 → pdf.js y≈86
+//   Footer "RepVbrBezieherliste": pdfplumber y≈551 → pdf.js y≈559
+//
+// FIX: use per-page dynamic Y_MIN by detecting the "Anz." column header word
+//   "Anz." always appears at x≈657-658, exactly once per page, in the column header row.
+//   We set Y_MIN = (Anz. y) + 8  so everything below the header row is included.
+const Y_MAX=555; // excludes footer (pdf.js y≈559+)
+const ANZ_X_MIN=650, ANZ_X_MAX=670; // x range for the "Anz." column header word
+
+// Column x-boundaries (identical in pdf.js and pdfplumber)
+const COLS_X={
+  strasse:     [0,   140],
+  nr:          [140, 174],
+  name:        [174, 355],
+  besond:      [355, 657],
+  anz:         [657, 681],
+  drerz:       [681, 722],
+  pva:         [722, 762],
+  la:          [762, 797],
+  abo:         [797, 9999],
+};
+
+async function parsePDF(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const rows=[];
+  for(let pn=1;pn<=pdf.numPages;pn++){
+    const page=await pdf.getPage(pn);
+    const vp=page.getViewport({scale:1.0});
+    const tc=await page.getTextContent();
+
+    // Convert all items to {text,x,y}
+    const allItems=tc.items
+      .map(it=>({text:it.str.trim(),x:it.transform[4],y:vp.height-it.transform[5]}))
+      .filter(it=>it.text);
+
+    // Find the column header "Anz." on this page to get per-page Y_MIN
+    const anzHeader=allItems.find(it=>it.text==='Anz.'&&it.x>=ANZ_X_MIN&&it.x<=ANZ_X_MAX);
+    // Y_MIN = just below the column header row (+8 gap); fallback to 200 if not found
+    const Y_MIN = anzHeader ? anzHeader.y + 8 : 200;
+
+    // Keep only data area items
+    const items=allItems.filter(it=>it.y>=Y_MIN&&it.y<=Y_MAX);
+
+    // Group into rows by y proximity (3pt tolerance)
+    const byY={};
+    for(const it of items){
+      let placed=false;
+      for(const ky of Object.keys(byY)){
+        if(Math.abs(it.y-parseFloat(ky))<=3){byY[ky].push(it);placed=true;break;}
+      }
+      if(!placed)byY[it.y]=[it];
+    }
+
+    for(const ky of Object.keys(byY).sort((a,b)=>a-b)){
+      const ws=byY[ky].sort((a,b)=>a.x-b.x);
+      const col=(lo,hi)=>ws.filter(w=>w.x>=lo&&w.x<hi).map(w=>w.text).join(' ').trim();
+      rows.push({
+        strasse:col(...COLS_X.strasse),
+        nr:     col(...COLS_X.nr),
+        name:   col(...COLS_X.name),
+        besond: col(...COLS_X.besond),
+        anz:    col(...COLS_X.anz),
+        drerz:  col(...COLS_X.drerz),
+        pva:    col(...COLS_X.pva),
+        la:     col(...COLS_X.la),
+        abo:    col(...COLS_X.abo),
+      });
+    }
+  }
+  return rows;
+}
+
+function cleanRows(raw){
+  const out=[];let cur='';
+  for(const r of raw){
+    if(r.strasse){
+      if(r.strasse.includes('RepVbr'))continue;
+      cur=r.strasse;
+    }
+    if(!r.name)continue;
+    if(r.name.includes('Bezirksreserve'))continue;
+    if((r.name.startsWith('Name')||r.name==='Name * Vorname')&&r.nr.includes('Nr'))continue;
+    const row={...r};
+    if(!row.strasse)row.strasse=cur;
+    out.push(row);
+  }
+  return out;
+}
+
+function computeTotals(rows){
+  const total=rows.filter(r=>r.anz==='1').length;
+  const dc={};
+  for(const r of rows)if(r.anz==='1'&&r.drerz)dc[r.drerz]=(dc[r.drerz]||0)+1;
+  return{total,dc};
+}
+
+function totalStr(label,total,dc){
+  const p=[];
+  if(label)p.push(label);
+  p.push('Total = '+total);
+  for(const k of['RHZ','FAZ','FR','PAU'])p.push(k+' = '+(dc[k]||0));
+  for(const[k,v]of Object.entries(dc))if(!['RHZ','FAZ','FR','PAU'].includes(k))p.push(k+' = '+v);
+  return p.join('   ');
+}
+
+function buildOutput(allRows,order){
+  const byStreet={};
+  for(const r of allRows){
+    if(!byStreet[r.strasse])byStreet[r.strasse]=[];
+    byStreet[r.strasse].push(r);
+  }
+  const out=[],log=[];
+  for(const street of order){
+    let key=Object.keys(byStreet).find(k=>
+      normStr(k)===normStr(street)||normStr(k).includes(normStr(street))||normStr(street).includes(normStr(k))
+    );
+    if(!key){log.push('⚠ Nicht gefunden: '+street);continue;}
+    const rows=byStreet[key];
+    log.push('✓ '+key+': '+rows.length+' Zeilen');
+    out.push({type:'street',street:key});
+    if(isOE(key)){
+      const odd=rows.filter(r=>{try{return parseInt(r.nr)%2===1;}catch{return false;}});
+      const even=rows.filter(r=>{try{const n=parseInt(r.nr);return isNaN(n)||n%2===0;}catch{return true;}});
+      for(const[lbl,seg]of[['ODD',odd],['EVEN',even]]){
+        for(const r of seg)out.push({type:'data',row:r,street:key});
+        const{total,dc}=computeTotals(seg);
+        out.push({type:'total',label:'',total,dc});
+      }
+    } else {
+      for(const r of rows)out.push({type:'data',row:r,street:key});
+      const{total,dc}=computeTotals(rows);
+      out.push({type:'total',label:'',total,dc});
+    }
+  }
+  return{out,log};
+}
+
+// ── PDF Generation ────────────────────────────────────────────────────────────
+function generatePDF(outputRows){
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const PW=297,PH=210,M=8,UW=PW-M*2;
+  // Straße column removed - 8 columns only
+  const HEADS=['Nr.','Name * Vorname','Anz.','Drerz','Besonderheit','Pva','La','Abo'];
+  const WW=[12,62,10,16,116,14,10,22]; // total=262mm, fits landscape A4 (281mm usable)
+
+  doc.setFont('helvetica','bold');doc.setFontSize(13);
+  doc.setTextColor(26,35,126);
+  doc.text('Bezieherliste vom Dienstag, 21.04.2026',PW/2,10,{align:'center'});
+
+  // ── Grand Summary Header ──────────────────────────────────────────────────
+  // Compute totals across ALL rows passed in
+  const allDataRows=outputRows.filter(it=>it.type==='data').map(it=>it.row);
+  const grandTotal=allDataRows.filter(r=>r.anz==='1').length;
+  const grandDC={};
+  for(const r of allDataRows) if(r.anz==='1'&&r.drerz) grandDC[r.drerz]=(grandDC[r.drerz]||0)+1;
+
+  // Build summary line: Total = N   RHZ = X   FAZ = X   FR = X   PAU = X   ...others
+  const summaryParts=['Gesamtanzahl: '+grandTotal+' Zeitungen'];
+  for(const k of['RHZ','FAZ','FR','PAU']) summaryParts.push(k+': '+(grandDC[k]||0));
+  for(const[k,v]of Object.entries(grandDC)) if(!['RHZ','FAZ','FR','PAU'].includes(k)) summaryParts.push(k+': '+v);
+
+  // Draw summary box
+  const BOX_H=10;
+  doc.setFillColor(26,35,126);
+  doc.rect(M,14,UW,BOX_H,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(8);
+  doc.setTextColor(255,255,255);
+  // Left: label
+  doc.text('ZUSAMMENFASSUNG',M+3,14+6.5);
+  // Right: the counts spread across the width
+  const countStr=summaryParts.join('     ');
+  doc.text(countStr,M+UW-3,14+6.5,{align:'right'});
+
+  let yPos=28,tBody=[];
+
+  // Draw a full-width total/segment-total row manually (no column splits = no wrapping)
+  function drawFullWidthRow(text,fillRGB,textRGB){
+    const ROW_H=6.5;
+    if(yPos+ROW_H>PH-10){doc.addPage();yPos=12;}
+    doc.setFillColor(...fillRGB);
+    doc.rect(M,yPos-0.5,UW,ROW_H,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(7);
+    doc.setTextColor(...textRGB);
+    doc.text(text,M+3,yPos+4);
+    yPos+=ROW_H+1;
+  }
+
+  function flush(){
+    if(!tBody.length)return;
+    doc.autoTable({
+      startY:yPos,
+      margin:{left:M,right:M},
+      head:[HEADS],
+      body:tBody.map(r=>r.cells),
+      columnStyles:Object.fromEntries(WW.map((w,i)=>[i,{cellWidth:w}])),
+      headStyles:{fillColor:[44,62,122],textColor:255,fontSize:7,fontStyle:'bold',cellPadding:{top:2,bottom:2,left:3,right:2}},
+      bodyStyles:{fontSize:7,cellPadding:{top:2,bottom:2,left:3,right:2},textColor:[25,25,25]},
+      alternateRowStyles:{fillColor:[247,248,255]},
+      didParseCell(data){
+        if(data.section!=='body')return;
+        const m=tBody[data.row.index];
+        if(!m)return;
+        if(m.isZero){data.cell.styles.fillColor=[255,220,220];data.cell.styles.textColor=[160,0,0];}
+      },
+      willDrawCell(data){
+        if(data.section!=='body')return;
+        const m=tBody[data.row.index];
+        // Strikethrough on Nr(0), Name(1) for ANZ=0 rows
+        if(m&&m.isZero&&data.column.index<=1){
+          const x=data.cell.x+data.cell.padding('left');
+          const y=data.cell.y+data.cell.height/2+0.5;
+          const w=data.cell.width-data.cell.padding('left')-data.cell.padding('right');
+          doc.setDrawColor(160,0,0);doc.setLineWidth(0.35);
+          doc.line(x,y,x+w,y);
+        }
+      },
+    });
+    yPos=doc.lastAutoTable.finalY+1;
+    tBody=[];
+  }
+
+  for(const item of outputRows){
+    if(item.type==='street'){
+      flush();
+      if(yPos>PH-30){doc.addPage();yPos=12;}
+      // Street bar: warm forest green — distinct from navy column headers
+      doc.setFillColor(30,110,60);
+      doc.rect(M,yPos-0.5,UW,8,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(9);
+      doc.setTextColor(255,255,255);
+      doc.text(item.street,M+3,yPos+5);
+      yPos+=10;
+    } else if(item.type==='data'){
+      const r=item.row,z=r.anz==='0';
+      // 8 cells: Nr, Name, Anz, Drerz, Besonderheit, Pva, La, Abo  (no Strasse)
+      tBody.push({type:'data',isZero:z,cells:[
+        r.nr||'',r.name||'',r.anz||'',r.drerz||'',r.besond||'',r.pva||'',r.la||'',r.abo||''
+      ]});
+    } else if(item.type==='total'){
+      // Flush data rows first, then draw total as single full-width row
+      flush();
+      drawFullWidthRow(totalStr(item.label,item.total,item.dc),[218,232,248],[0,40,100]);
+      yPos+=1;
+    }
+  }
+  flush();
+
+  const np=doc.internal.getNumberOfPages();
+  for(let i=1;i<=np;i++){
+    doc.setPage(i);
+    doc.setFont('helvetica','normal');doc.setFontSize(6.5);
+    doc.setTextColor(160,160,160);
+    doc.text('01-Normalzustellung, SA-Selbstabholer, ZA-Spätzustellung, ZB-Frühbanderole, ZC-Spätbanderole, ZK-Banderole kompakt',PW/2,PH-4,{align:'center'});
+    doc.text('Seite '+i+' / '+np,PW-M,PH-4,{align:'right'});
+  }
+  return doc.output('blob');
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+async function processAndDownload(){
+  const btn=document.getElementById('goBtn');
+  const pd=document.getElementById('progDiv');
+  const pb=document.getElementById('progBar');
+  const pt=document.getElementById('progTxt');
+  const err=document.getElementById('errDiv');
+  const sw=document.getElementById('statsWrap');
+
+  btn.disabled=true;btn.classList.add('loading');
+  btn.textContent='Verarbeite...';
+  pd.style.display='block';pb.style.width='0%';
+  err.style.display='none';sw.style.display='none';
+
+  try{
+    let allRows=[];
+    for(let i=0;i<files.length;i++){
+      pt.textContent='Lese Datei '+(i+1)+' / '+files.length+': '+files[i].name;
+      pb.style.width=((i/files.length)*55)+'%';
+      const raw=await parsePDF(files[i]);
+      const cleaned=cleanRows(raw);
+      allRows=allRows.concat(cleaned);
+    }
+
+    pt.textContent='Verarbeite Daten...';pb.style.width='65%';
+    await new Promise(r=>setTimeout(r,30));
+
+    const{out,log}=buildOutput(allRows,streetOrder);
+
+    pt.textContent='Erstelle PDF...';pb.style.width='82%';
+    await new Promise(r=>setTimeout(r,30));
+
+    const blob=generatePDF(out);
+
+    pt.textContent='Fertig — Download startet...';pb.style.width='100%';
+
+    // Immediate download
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='Bezieherliste_kombiniert.pdf';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+
+    // Stats
+    const totalD=allRows.filter(r=>r.anz==='1').length;
+    const totalZ=allRows.filter(r=>r.anz==='0').length;
+    const streets=[...new Set(allRows.map(r=>r.strasse).filter(Boolean))].length;
+    document.getElementById('statsDiv').innerHTML=`
+      <div class="sc"><div class="sn">${totalD}</div><div class="sl">Zustellungen</div></div>
+      <div class="sc"><div class="sn red">${totalZ}</div><div class="sl">Ausgefallen</div></div>
+      <div class="sc"><div class="sn">${streets}</div><div class="sl">Straßen</div></div>
+      <div class="sc"><div class="sn">${allRows.length}</div><div class="sl">Zeilen</div></div>`;
+    document.getElementById('logDiv').innerHTML=log.map(l=>`<div class="${l.startsWith('✓')?'lok':'lwn'}">${l}</div>`).join('');
+    sw.style.display='block';
+
+    setTimeout(()=>{pd.style.display='none';},1200);
+
+  }catch(e){
+    pd.style.display='none';
+    err.style.display='block';err.textContent='Fehler: '+e.message;
+    console.error(e);
+  }finally{
+    btn.disabled=false;btn.classList.remove('loading');
+    btn.innerHTML='⚙️ PDF erstellen &amp; herunterladen';
+    updateBtn();
+  }
+}
+</script>
+</body>
+</html>
